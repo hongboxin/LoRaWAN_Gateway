@@ -14,11 +14,11 @@
             "enable": true,
             "type": "SX1250",
             "single_input_mode": true,
-            "freq": 471400000,
+            "freq": 486600000,
             "rssi_offset": -207.0,
             "rssi_tcomp": {"coeff_a": 0, "coeff_b": 0, "coeff_c": 20.41, "coeff_d": 2162.56, "coeff_e": 0},
             "tx_enable": true,
-            "tx_freq_min": 500000000,
+            "tx_freq_min": 470000000,
             "tx_freq_max": 510000000,
             "tx_gain_lut":[
                 {"rf_power": -6, "pa_gain": 0, "pwr_idx":  0},
@@ -43,12 +43,12 @@
             "enable": true,
             "type": "SX1250",
             "single_input_mode": true,
-            "freq": 475000000,
+            "freq": 487400000,
             "rssi_offset": -207.0,
             "rssi_tcomp": {"coeff_a": 0, "coeff_b": 0, "coeff_c": 20.41, "coeff_d": 2162.56, "coeff_e": 0},
             "tx_enable": false
         },
-        "chan_multiSF_All": {"spreading_factor_enable": [ 5, 6, 7, 8, 9, 10, 11, 12 ]},
+        "chan_multiSF_All": {"spreading_factor_enable": [/* 5, 6,*/ 7, 8, 9, 10, 11, 12 ]},
         "chan_multiSF_0": {"enable": true, "radio": 0, "if": -300000},
         "chan_multiSF_1": {"enable": true, "radio": 0, "if": -100000},
         "chan_multiSF_2": {"enable": true, "radio": 0, "if":  100000},
@@ -63,11 +63,11 @@
     },
 
     "gateway_conf": {
-        "gateway_ID": "AA555A0000000000",
+        "gateway_ID": "c85863e9f25602fd",
         /* change with default server address/ports */
-        "server_address": "localhost",
-        "serv_port_up": 1730,
-        "serv_port_down": 1730,
+        "server_address": "38.181.56.170",
+        "serv_port_up": 1700,
+        "serv_port_down": 1700,
         /* adjust the following parameters for your network */
         "keepalive_interval": 10,
         "stat_interval": 30,
@@ -77,14 +77,14 @@
         "forward_crc_error": false,
         "forward_crc_disabled": false,
         /* GPS configuration */
-        "gps_tty_path": "/dev/ttyS0",
+        "gps_tty_path": "/dev/ttyUSB0",
         /* GPS reference coordinates */
         "ref_latitude": 0.0,
         "ref_longitude": 0.0,
         "ref_altitude": 0,
         /* Beaconing parameters */
-        "beacon_period": 0,
-        "beacon_freq_hz": 869525000,
+        "beacon_period": 128,
+        "beacon_freq_hz": 505300000,
         "beacon_datarate": 9,
         "beacon_bw_hz": 125000,
         "beacon_power": 14,
@@ -97,5 +97,13 @@
             {"id": "0xCAFE2345"}
         ],
         "log_file": "loragw_hal.log"
-    }
+    },
+	
+	"mqtt_conf": {
+		"host":"iotcraft.cn",
+		"port":1883,
+
+		"username":"2822290591@qq.com",
+		"password":"xhb20021109"
+	}
 }

@@ -45,6 +45,8 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <netdb.h>          /* gai_strerror */
 
 #include <pthread.h>
+#include <gpiod.h>
+#include <mosquitto.h>
 
 #include "trace.h"
 #include "jitqueue.h"
@@ -62,6 +64,9 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #define STRINGIFY(x)    #x
 #define STR(x)          STRINGIFY(x)
 
+#define GPIO_CHIP_DEV	"/dev/gpiochip0"
+#define GPIO_LINE_NUM	23
+
 #define RAND_RANGE(min, max) (rand() % (max + 1 - min) + min)
 
 /* -------------------------------------------------------------------------- */
@@ -71,11 +76,11 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
     #define VERSION_STRING "undefined"
 #endif
 
-#define JSON_CONF_DEFAULT   "global_conf.json"
+#define JSON_CONF_DEFAULT   "global_conf.json.sx1250.CN490"
 
 #define DEFAULT_SERVER      127.0.0.1   /* hostname also supported */
-#define DEFAULT_PORT_UP     1780
-#define DEFAULT_PORT_DW     1782
+#define DEFAULT_PORT_UP     1700
+#define DEFAULT_PORT_DW     1700
 #define DEFAULT_KEEPALIVE   5           /* default time interval for downstream keep-alive packet */
 #define DEFAULT_STAT        30          /* default time interval for statistics */
 #define PUSH_TIMEOUT_MS     100
@@ -285,6 +290,8 @@ static int parse_debug_configuration(const char * conf_file);
 static uint16_t crc16(const uint8_t * data, unsigned size);
 
 static double difftimespec(struct timespec end, struct timespec beginning);
+
+static int Board_reset(void);
 
 static void gps_process_sync(void);
 
@@ -878,7 +885,7 @@ static int parse_SX130x_configuration(const char * conf_file) {
             snprintf(param_name, sizeof param_name, "chan_multiSF_%i.if", i);
             ifconf.freq_hz = (int32_t)json_object_dotget_number(conf_obj, param_name);
             // TODO: handle individual SF enabling and disabling (spread_factor)
-            MSG("INFO: Lora multi-SF channel %i>  radio %i, IF %i Hz, 125 kHz bw, SF 5 to 12\n", i, ifconf.rf_chain, ifconf.freq_hz);
+            MSG("INFO: Lora multi-SF channel %i>  radio %i, IF %i Hz, 125 kHz bw, SF 7 to 12\n", i, ifconf.rf_chain, ifconf.freq_hz);
         }
         /* all parameters parsed, submitting configuration to the HAL */
         if (lgw_rxif_setconf(i, &ifconf) != LGW_HAL_SUCCESS) {
@@ -1104,7 +1111,7 @@ static int parse_gateway_configuration(const char * conf_file) {
     str = json_object_get_string(conf_obj, "gps_tty_path");
     if (str != NULL) {
         strncpy(gps_tty_path, str, sizeof gps_tty_path);
-        gps_tty_path[sizeof gps_tty_path - 1] = '\0'; /* ensure string termination */
+        gps_tty_path[sizeof gps_tty_path - 1] = '\0'; 
         MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
     }
 
@@ -1418,6 +1425,57 @@ static int send_tx_ack(uint8_t token_h, uint8_t token_l, enum jit_error_e error,
     return send(sock_down, (void *)buff_ack, buff_index, 0);
 }
 
+static int Board_reset(void)
+{
+	struct gpiod_chip		*chip;
+	struct gpiod_line		*line;
+	int						ret = 0;
+
+	chip = gpiod_chip_open(GPIO_CHIP_DEV);
+	if( !chip )
+	{
+		printf("[Board_reset]:open dev error\n");
+		return -1;
+	}
+
+	line = gpiod_chip_get_line(chip, GPIO_LINE_NUM);
+	if( !line )
+	{
+		printf("[Board_reset]:chip get gpio line error\n");
+		goto close_chip;
+	}
+
+	ret = gpiod_line_request_output(line, "reset_button", 0);
+	if( ret < 0 )
+	{
+		printf("[Board_reset]:set output mode error\n");
+		goto release_line;
+	}
+
+	ret = gpiod_line_set_value(line, 1);
+	if( ret < 0 )
+	{
+		printf("[Board_reset]:set 1 value error\n");
+		goto release_line;
+	}
+
+	usleep(100000);
+
+	ret = gpiod_line_set_value(line, 0);
+	if( ret < 0 )
+	{
+		printf("[Board_reset]:set 0 value error\n");
+		goto release_line;
+	}
+
+release_line:
+	gpiod_line_release(line);
+
+close_chip:
+	gpiod_chip_close(chip);
+	return ret;
+}
+
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
@@ -1537,6 +1595,10 @@ int main(int argc, char ** argv)
         if (x != 0) {
             exit(EXIT_FAILURE);
         }
+		x = parse_mqtt_configuration(conf_fname);
+		if (x != 0){
+			exit(EXIT_FAILURE);
+		}
         x = parse_debug_configuration(conf_fname);
         if (x != 0) {
             MSG("INFO: no debug configuration\n");
@@ -1547,8 +1609,8 @@ int main(int argc, char ** argv)
     }
 
     /* Start GPS a.s.a.p., to allow it to lock */
-    if (gps_tty_path[0] != '\0') { /* do not try to open GPS device if no path set */
-        i = lgw_gps_enable(gps_tty_path, "ubx7", 0, &gps_tty_fd); /* HAL only supports u-blox 7 for now */
+    if (gps_tty_path[0] != '\0') { 
+        i = lgw_gps_enable(gps_tty_path, "ubx7", 0, &gps_tty_fd); 
         if (i != LGW_GPS_SUCCESS) {
             printf("WARNING: [main] impossible to open %s for GPS sync (check permissions)\n", gps_tty_path);
             gps_enabled = false;
@@ -1638,15 +1700,18 @@ int main(int argc, char ** argv)
         exit(EXIT_FAILURE);
     }
     freeaddrinfo(result);
+	
+   if (com_type == LGW_COM_SPI)
+   {
+	   /* Board reset */
+	   if( Board_reset() < 0 )
+	   {
+		   MSG("ERROR:Board reset error\n");
+		   return -1;
+	   }
+	   MSG("INFO:Board reset ( by libgpiod ) scucessfully!\n");
 
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh start") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
+   }
     for (l = 0; l < LGW_IF_CHAIN_NB; l++) {
         for (m = 0; m < 8; m++) {
             nb_pkt_log[l][m] = 0;
@@ -1697,7 +1762,7 @@ int main(int argc, char ** argv)
     }
 
     /* spawn thread to manage GPS */
-    if (gps_enabled == true) {
+      if (gps_enabled == true) {
         i = pthread_create(&thrid_gps, NULL, (void * (*)(void *))thread_gps, NULL);
         if (i != 0) {
             MSG("ERROR: [main] impossible to create GPS thread\n");
@@ -1911,7 +1976,8 @@ int main(int argc, char ** argv)
             printf("ERROR: failed to join Spectral Scan thread with %d - %s\n", i, strerror(errno));
         }
     }
-    if (gps_enabled == true) {
+
+	if (gps_enabled == true) {
         pthread_cancel(thrid_gps); /* don't wait for GPS thread, no access to concentrator board */
         pthread_cancel(thrid_valid); /* don't wait for validation thread, no access to concentrator board */
 
@@ -1934,14 +2000,6 @@ int main(int argc, char ** argv)
             MSG("INFO: concentrator stopped successfully\n");
         } else {
             MSG("WARNING: failed to stop concentrator successfully\n");
-        }
-    }
-
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh stop") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
         }
     }
 
@@ -2144,7 +2202,7 @@ void thread_up(void) {
                 if (j == LGW_GPS_SUCCESS) {
                     /* split the UNIX timestamp to its calendar components */
                     x = gmtime(&(pkt_utc_time.tv_sec));
-                    j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"time\":\"%04i-%02i-%02iT%02i:%02i:%02i.%06liZ\"", (x->tm_year)+1900, (x->tm_mon)+1, x->tm_mday, x->tm_hour, x->tm_min, x->tm_sec, (pkt_utc_time.tv_nsec)/1000); /* ISO 8601 format */
+                    j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"time\":\"%04i-%02i-%02iT%02i:%02i:%02i.%06liZ\"", (x->tm_year)+1900, (x->tm_mon)+1, x->tm_mday, (x->tm_hour)+8, x->tm_min, x->tm_sec, (pkt_utc_time.tv_nsec)/1000); /* ISO 8601 format */
                     if (j > 0) {
                         buff_index += j;
                     } else {
@@ -2352,12 +2410,15 @@ void thread_up(void) {
                 MSG("ERROR: [up] snprintf failed line %u\n", (__LINE__ - 4));
                 exit(EXIT_FAILURE);
             }
-
+			for(int h = 0; h < p->size; ++h)
+			{
+				printf("%02x",p->payload[h]);
+			}
             /* Packet base64-encoded payload, 14-350 useful chars */
             memcpy((void *)(buff_up + buff_index), (void *)",\"data\":\"", 9);
             buff_index += 9;
             j = bin_to_b64(p->payload, p->size, (char *)(buff_up + buff_index), 341); /* 255 bytes = 340 chars in b64 + null char */
-            if (j>=0) {
+			if (j>=0) {
                 buff_index += j;
             } else {
                 MSG("ERROR: [up] bin_to_b64 failed line %u\n", (__LINE__ - 5));
@@ -2918,7 +2979,8 @@ void thread_down(void) {
                         json_value_free(root_val);
                         continue;
                     }
-                    if (gps_enabled == true) {
+
+					if (gps_enabled == true) {
                         pthread_mutex_lock(&mx_timeref);
                         if (gps_ref_valid == true) {
                             local_ref = time_reference_gps;
@@ -3402,7 +3464,8 @@ void thread_gps(void) {
         size_t frame_end_idx = 0;
 
         /* blocking non-canonical read on serial port */
-        ssize_t nb_char = read(gps_tty_fd, serial_buff + wr_idx, LGW_GPS_MIN_MSG_SIZE);
+
+		ssize_t nb_char = read(gps_tty_fd, serial_buff + wr_idx, LGW_GPS_MIN_MSG_SIZE);
         if (nb_char <= 0) {
             MSG("WARNING: [gps] read() returned value %zd\n", nb_char);
             continue;
