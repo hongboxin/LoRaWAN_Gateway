@@ -202,12 +202,14 @@ static lgw_context_t lgw_context = {
 /* File handle to write debug logs */
 FILE * log_file = NULL;
 
+#if 0
 /* I2C temperature sensor handles */
 static int     ts_fd = -1;
 static uint8_t ts_addr = 0xFF;
 
 /* I2C AD5338 handles */
 static int     ad_fd = -1;
+#endif
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DECLARATION ---------------------------------------- */
@@ -1093,7 +1095,8 @@ int lgw_start(void) {
     dbg_init_random();
 
     if (CONTEXT_COM_TYPE == LGW_COM_SPI) {
-        /* Find the temperature sensor on the known supported ports */
+#if 0
+		/* Find the temperature sensor on the known supported ports */
         for (i = 0; i < (int)(sizeof I2C_PORT_TEMP_SENSOR); i++) {
             ts_addr = I2C_PORT_TEMP_SENSOR[i];
             err = i2c_linuxdev_open(I2C_DEVICE, ts_addr, &ts_fd);
@@ -1143,7 +1146,7 @@ int lgw_start(void) {
             printf("INFO: AD5338R: Set DAC output to 0x%02X 0x%02X\n", (uint8_t)VOLTAGE2HEX_H(0), (uint8_t)VOLTAGE2HEX_L(0));
         }
     }
-
+#endif
     /* Connect to the external sx1261 for LBT or Spectral Scan */
     if (CONTEXT_SX1261.enable == true) {
         err = sx1261_connect(CONTEXT_COM_TYPE, (CONTEXT_COM_TYPE == LGW_COM_SPI) ? CONTEXT_SX1261.spi_path : NULL);
@@ -1222,7 +1225,8 @@ int lgw_stop(void) {
     }
 
     if (CONTEXT_COM_TYPE == LGW_COM_SPI) {
-        DEBUG_MSG("INFO: Closing I2C for temperature sensor\n");
+#if 0 
+		DEBUG_MSG("INFO: Closing I2C for temperature sensor\n");
         x = i2c_linuxdev_close(ts_fd);
         if (x != 0) {
             printf("ERROR: failed to close I2C temperature sensor device (err=%i)\n", x);
@@ -1237,6 +1241,7 @@ int lgw_stop(void) {
                 err = LGW_HAL_ERROR;
             }
         }
+#endif
     }
 
     CONTEXT_STARTED = false;
@@ -1286,12 +1291,14 @@ int lgw_receive(uint8_t max_pkt, struct lgw_pkt_rx_s *pkt_data) {
         printf("WARNING: not enough space allocated, fetched %d packet(s), %d will be left in RX buffer\n", nb_pkt_fetched, nb_pkt_left);
     }
 
+#if 0
     /* Apply RSSI temperature compensation */
     res = lgw_get_temperature(&current_temperature);
     if (res != LGW_I2C_SUCCESS) {
         printf("ERROR: failed to get current temperature\n");
         return LGW_HAL_ERROR;
     }
+#endif
 
     /* Iterate on the RX buffer to get parsed packets */
     for (nb_pkt_found = 0; nb_pkt_found < ((nb_pkt_fetched <= max_pkt) ? nb_pkt_fetched : max_pkt); nb_pkt_found++) {
@@ -1589,7 +1596,7 @@ int lgw_get_eui(uint64_t* eui) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_get_temperature(float* temperature) {
-    int err = LGW_HAL_ERROR;
+    //int err = LGW_HAL_ERROR;
 
     DEBUG_PRINTF(" --- %s\n", "IN");
 
@@ -1597,7 +1604,7 @@ int lgw_get_temperature(float* temperature) {
 
     switch (CONTEXT_COM_TYPE) {
         case LGW_COM_SPI:
-            err = stts751_get_temperature(ts_fd, ts_addr, temperature);
+            //err = stts751_get_temperature(ts_fd, ts_addr, temperature);
             break;
         case LGW_COM_USB:
             err = lgw_com_get_temperature(temperature);
