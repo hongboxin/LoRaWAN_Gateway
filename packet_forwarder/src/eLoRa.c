@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include "broker.h"
 #include "mosquitto.h"
 #include "eLoRa.h"
 #include "parson.h"
@@ -75,19 +76,6 @@ int parse_mqtt_configuration(const char *conf_file, mqtt_config_t *mqtt)
 		return ELORA_FAILURE;
 	}
 
-	/* parse MQTT keepalive */
-	val = json_object_get_value(conf_obj, "keepalive");
-	if(val != NULL)
-	{
-		mqtt->keepalive = (int)json_value_get_number(val);
-		printf("INFO:MQTT keepalive is configured to %d\n", mqtt->keepalive);
-	}
-	else
-	{
-		printf("ERROR:MQTT set keepalive failure:%s\n", strerror(errno));
-		return ELORA_FAILURE; 
-	}
-
 	/* parse MQTT username */
 	str = json_object_get_string(conf_obj, "username");
 	if(str != NULL)
@@ -112,119 +100,32 @@ int parse_mqtt_configuration(const char *conf_file, mqtt_config_t *mqtt)
 		printf("ERROR:MQTT set password failure:%s\n", strerror(errno));
 	}
 
+	/* parse MQTT sub_topic */
+	str = json_object_get_string(conf_obj, "sub_topic");
+	if(str != NULL)
+	{
+		snprintf(mqtt->sub_topic, sizeof(mqtt->sub_topic), "%s", str);
+		printf("INFO:MQTT sub topic is configured to \"%s\"\n", mqtt->sub_topic);
+	}
+	else
+	{
+		printf("ERROR:MQTT set sub topic failure:%s\n", strerror(errno));
+	}
+
+	/* parse MQTT pub_topic */
+	str = json_object_get_string(conf_obj, "pub_topic");
+	if(str != NULL)
+	{
+		snprintf(mqtt->pub_topic, sizeof(mqtt->pub_topic), "%s", str);
+		printf("INFO:MQTT pub topic is configured to \"%s\"\n", mqtt->pub_topic);
+	}
+	else
+	{
+		printf("ERROR:MQTT set pub topic failure:%s\n", strerror(errno));
+	}
+
 	/* free JSON parsing data structure */
 	json_value_free(root_val);
 
 	return ELORA_SUCCESS;
-}
-
-int mqtt_connect_broker(mqtt_config_t mqtt, struct mosquitto **mosq)
-{
-	int				loop = -1;
-	int				rv;
-
-	if(NULL == mosq)
-	{
-		printf("ERROR:mqtt connect broker invalid parameters\n");
-		return ELORA_FAILURE;
-	}
-
-	mosquitto_lib_init();
-
-	*mosq = mosquitto_new(NULL, true, NULL);
-	if(*mosq == NULL)
-	{
-		printf("ERROR:Create mqtt client failed:%s\n", strerror(errno));
-		mosquitto_lib_cleanup();
-		return ELORA_FAILURE;
-	}
-
-	rv = mosquitto_username_pw_set(*mosq, mqtt.username, mqtt.password);
-	if(rv != MOSQ_ERR_SUCCESS)
-	{
-		printf("ERROR:set mqtt broker username and password failure:%s\n", strerror(errno));
-		goto cleanup;
-	}
-
-	if(mosquitto_connect(*mosq, mqtt.host, mqtt.port, mqtt.keepalive))
-	{
-		printf("ERROR:connect mqtt broker failure:%s\n", strerror(errno));
-		goto cleanup;
-	}
-
-	loop = mosquitto_loop_start(*mosq);
-	if(loop != MOSQ_ERR_SUCCESS)
-	{
-		printf("ERROR:mosquitto loop failure:%s\n", strerror(errno));
-		goto cleanup;
-	}
-
-	return ELORA_SUCCESS;
-
-cleanup:
-	mosquitto_destroy(*mosq);
-	mosquitto_lib_cleanup();
-
-	return ELORA_FAILURE;
-}
-
-int parse_elora_packet(mqtt_packet_t *ep, uint8_t *sp)
-{
-	if(ep == NULL || sp == NULL)
-	{
-		return ELORA_FAILURE;
-	}
-
-	if(sp[0] & 0x80)
-	{
-		sprintf(ep->temp,"-%d.%d",sp[0] & 0x7f,sp[1]);
-	}
-	else
-	{
-		sprintf(ep->temp,"%d.%d",sp[0] & 0x7f,sp[1]);
-	}
-
-	return ELORA_SUCCESS;
-}
-
-char *elora_packet_json(mqtt_packet_t *ep)
-{
-	cJSON			*root;
-	char			*p;
-	char			*json_str;
-
-	if(ep == NULL)
-	{
-		return NULL;
-	}
-
-	root = cJSON_CreateObject();
-	if(root == NULL)
-	{
-		return ELORA_SUCCESS;
-	}
-
-	cJSON_AddItemToObject(root, "temperature", cJSON_CreateString(ep->temp));
-
-	json_str = cJSON_Print(root);
-	if(json_str == NULL)
-	{
-		cJSON_Delete(root);
-		return NULL;
-	}
-
-	p = (char *)malloc(strlen(json_str)+1);
-	if(p == NULL)
-	{
-		free(json_str);
-		cJSON_Delete(root);
-		return NULL;
-	}
-
-	strcpy(p, json_str);
-
-	free(json_str);
-	cJSON_Delete(root);
-
-	return p;
 }
