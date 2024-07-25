@@ -43,14 +43,13 @@ void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_
 {
 	char		buf[1024];
 	int			rc;
-
-	(void)mosq;
-	(void)obj;
+	emqx_config_t *emqx = (emqx_config_t *)obj;
+	
 	printf("=============================================================================\n");
 	printf("INFO:Receive elora message from node\n", (char *)message->payload);
 	
 	strcpy(buf, (char *)message->payload);
-	if((rc = gateway_send_server(buf, strlen(buf))) == 0)
+	if((rc = gateway_send_server(buf, strlen(buf), emqx->pub_topic)) == 0)
 	{
 		printf("INFO:Send message to server:%s\n", buf);
 		printf("=============================================================================\n");
@@ -61,14 +60,14 @@ void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_
 	}
 }
 
-int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq)
+int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq, emqx_config_t *emqx)
 {
 	char				buf[1024];
 	int					rv = -1;
 
 	mosquitto_lib_init();
 
-	*mosq = mosquitto_new(NULL, true, NULL);
+	*mosq = mosquitto_new(NULL, true, emqx);
 	if( !*mosq )
 	{
 		printf("mosmosq new() failure:%s\n", strerror(errno));
@@ -93,7 +92,7 @@ int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq)
 		goto cleanup;
 	}
 	
-	if(gateway_connect_server() <  0)
+	if(gateway_connect_server(emqx) <  0)
 	{
 		printf("gateway connect sever failed\n");
 		goto cleanup;
@@ -110,7 +109,7 @@ int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq)
 
 	while(1)
 	{
-		rv = gateway_recv_server(buf);
+		rv = gateway_recv_server(buf, emqx->sub_topic);
 		if(rv > 0)
 		{
 			printf("=============================================================================\n");
@@ -141,11 +140,9 @@ cleanup:
 	return rv;
 }
 
-int gateway_send_server(char *buf, int buf_size)
+int gateway_send_server(char *buf, int buf_size, char *pub_topic)
 {
-	char                topic[128] = "/sys/k123ztJa2Gk/node/thing/event/property/post";
-
-	if(mosquitto_publish(mosq_up, NULL, topic, buf_size, buf, 0, false) != MOSQ_ERR_SUCCESS)
+	if(mosquitto_publish(mosq_up, NULL, pub_topic, buf_size, buf, 0, false) != MOSQ_ERR_SUCCESS)
 	{
 		printf("gateway send message to server failure\n");
 		return -1;
@@ -158,21 +155,23 @@ int gateway_send_server(char *buf, int buf_size)
 	}
 }
 
-int gateway_connect_server(void)
+int gateway_connect_server(emqx_config_t *emqx)
 {
-	char				clientid[128] = "k123ztJa2Gk.node|securemode=2,signmethod=hmacsha256,timestamp=1721784820395|";
-	char				host[128] = "iot-06z00gtm7spgofv.mqtt.iothub.aliyuncs.com";
-	char				username[128] = "node&k123ztJa2Gk";
-	char				passwd[128] = "91a811ecd66dabc4bb5b7c11b0ff5c9c0aeb0dbe98f7d16a766fe4045975c55e";
-	int					port = 1883;
+	char				clientid[512];
+	char				host[512];
+	int					port;
+	int					alive;
+
+	strncpy(clientid, emqx->clientid, BUF_SIZE);
+	strncpy(host, emqx->host, BUF_SIZE);
+	port = emqx->port;
+	alive = emqx->alive;
 
 	mosquitto_lib_init();
 
 	mosq_up = mosquitto_new(clientid, true, NULL);
 
-	mosquitto_username_pw_set(mosq_up, username, passwd);
-
-	if(mosquitto_connect(mosq_up, host, port, 60) != MOSQ_ERR_SUCCESS)
+	if(mosquitto_connect(mosq_up, host, port, alive) != MOSQ_ERR_SUCCESS)
 	{
 		printf("ERROR:gateway connect server failure\n");
 		return -1;
@@ -204,13 +203,11 @@ void on_message(struct mosquitto *mosq, void *userdata, const struct mosquitto_m
 	}
 }
 
-int gateway_recv_server(char *buf)
+int gateway_recv_server(char *buf, char *sub_topic)
 {
-	char                topic[128] = "/k123ztJa2Gk/node/user/get";
-
 	mosquitto_message_callback_set(mosq_up, on_message);
 
-	if(mosquitto_subscribe(mosq_up, NULL, topic, 0) != MOSQ_ERR_SUCCESS)
+	if(mosquitto_subscribe(mosq_up, NULL, sub_topic, 0) != MOSQ_ERR_SUCCESS)
 	{
 		printf("ERROR:gateway recv message from server failure:%s\n", strerror(errno));
 		return -1;

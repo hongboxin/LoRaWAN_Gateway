@@ -20,6 +20,8 @@
 #include "eLoRa.h"
 #include "parson.h"
 #include "cJSON.h"
+#include "dictionary.h"
+#include "iniparser.h"
 
 int parse_mqtt_configuration(const char *conf_file, mqtt_config_t *mqtt)
 {
@@ -128,4 +130,86 @@ int parse_mqtt_configuration(const char *conf_file, mqtt_config_t *mqtt)
 	json_value_free(root_val);
 
 	return ELORA_SUCCESS;
+}
+
+int start_thread_elora(char *ini_path, emqx_config_t *emqx)
+{
+	dictionary			*ini = NULL;
+	const char			*enable;
+
+	if( !ini_path || !emqx)
+	{
+		printf("Invalid input parameters in start thread elora\n");
+		return 0;
+	}
+
+	ini = iniparser_load( ini_path );
+	if( !ini )
+	{
+		printf("Iniparser load failure:%s\n", strerror(errno));
+		return 0;
+	}
+
+	enable = iniparser_getstring(ini, "elora_support:enable", DEFAULT_ENABLE);
+	strncpy(emqx->enable, enable, BUF_SIZE);
+
+	iniparser_freedict(ini);
+
+	if(strcmp(emqx->enable, "yes") == 0)
+	{
+		printf("INFO:Setting start elora thread\n");
+		return 1;
+	}
+	else
+	{
+		printf("INFO:Enabled elora thread\n");
+		return 0;
+	}
+}
+
+int get_emqx_conf(char *ini_path, emqx_config_t *emqx)
+{
+	dictionary		*ini = NULL;
+	const char		*host;
+	int				port;
+	const char		*clientid;
+	const char		*sub_topic;
+	const char		*pub_topic;
+	int				Qos;
+	int				alive;
+
+	if( !ini_path || !emqx )
+	{
+		printf("Invalid parameters in get emqx conf\n");
+		return -1;
+	}
+	
+	ini = iniparser_load( ini_path );
+	if( !ini )
+	{
+		printf("Iniparser load file failure:%s\n", strerror(errno));
+		return -1;
+	}
+
+	host = iniparser_getstring(ini, "emqx_server:host", DEFAULT_HOST);
+	port = iniparser_getint(ini, "emqx_server:port", DEFAULT_PORT);
+
+	clientid = iniparser_getstring(ini, "client_id:id", DEFAULT_CLIENTID);
+	alive = iniparser_getint(ini, "keep_alive:alive", DEFAULT_ALIVE);
+	Qos = iniparser_getint(ini, "Qos:Qos", DEFAULT_QOS);
+
+	sub_topic = iniparser_getstring(ini, "topic:sub_topic", DEFAULT_SUBTOPIC);
+	pub_topic = iniparser_getstring(ini, "topic:pub_topic", DEFAULT_PUBTOPIC);
+
+	strncpy(emqx->host, host, BUF_SIZE);
+	emqx->port = port;
+	strncpy(emqx->clientid, clientid, BUF_SIZE);
+	strncpy(emqx->sub_topic, sub_topic, BUF_SIZE);
+	strncpy(emqx->pub_topic, pub_topic, BUF_SIZE);
+	Qos = emqx->Qos;
+	alive = emqx->alive;
+
+	iniparser_freedict(ini);
+
+	return 0;
 }

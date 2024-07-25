@@ -57,6 +57,9 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_reg.h"
 #include "loragw_gps.h"
 
+#include "eLoRa.h"
+#include "broker.h"
+
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
@@ -66,6 +69,8 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 #define GPIO_CHIP_DEV	"/dev/gpiochip0"
 #define GPIO_LINE_NUM	23
+
+#define INI_PATH		"/home/iot24/sx1302/packet_forwarder/emqx.ini"
 
 #define RAND_RANGE(min, max) (rand() % (max + 1 - min) + min)
 
@@ -265,6 +270,10 @@ static uint32_t nb_pkt_received_ref[16];
 /* Interface type */
 static lgw_com_type_t com_type = LGW_COM_SPI;
 
+/* MQTT Broker config */
+mqtt_config_t		mqtt;
+emqx_config_t		emqx;
+
 /* Spectral Scan */
 static spectral_scan_t spectral_scan_params = {
     .enable = false,
@@ -306,6 +315,7 @@ void thread_jit(void);
 void thread_gps(void);
 void thread_valid(void);
 void thread_spectral_scan(void);
+void thread_elora(void);
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
@@ -1485,6 +1495,7 @@ int main(int argc, char ** argv)
     int i; /* loop variable and temporary variable for return value */
     int x;
     int l, m;
+	int elora_flag = 0;
 
     /* configuration file related */
     const char defaut_conf_fname[] = JSON_CONF_DEFAULT;
@@ -1497,6 +1508,7 @@ int main(int argc, char ** argv)
     pthread_t thrid_valid;
     pthread_t thrid_jit;
     pthread_t thrid_ss;
+	pthread_t thrid_elora;
 
     /* network socket creation */
     struct addrinfo hints;
@@ -1595,10 +1607,6 @@ int main(int argc, char ** argv)
         if (x != 0) {
             exit(EXIT_FAILURE);
         }
-		x = parse_mqtt_configuration(conf_fname);
-		if (x != 0){
-			exit(EXIT_FAILURE);
-		}
         x = parse_debug_configuration(conf_fname);
         if (x != 0) {
             MSG("INFO: no debug configuration\n");
@@ -1717,7 +1725,6 @@ int main(int argc, char ** argv)
             nb_pkt_log[l][m] = 0;
         }
     }
-
     /* starting the concentrator */
     i = lgw_start();
     if (i == LGW_HAL_SUCCESS) {
@@ -1751,6 +1758,25 @@ int main(int argc, char ** argv)
         MSG("ERROR: [main] impossible to create JIT thread\n");
         exit(EXIT_FAILURE);
     }
+
+	/* Determine whether to start the eLoRa function */
+	elora_flag = start_thread_elora(INI_PATH, &emqx);
+	if (elora_flag)
+	{		
+			i =  get_emqx_conf(INI_PATH, &emqx);
+			if(i !=  0)
+			{
+				MSG("ERROR:parse emqx configuration failure\n");
+				exit(EXIT_FAILURE);
+			}
+
+			i = pthread_create(&thrid_elora, NULL, (void * (*)(void *))thread_elora, NULL);
+			if (i != 0)
+			{
+				MSG("ERROR: [main] impossible to create ELORA thread\n");
+				exit(EXIT_FAILURE);
+			}
+	}
 
     /* spawn thread for background spectral scan */
     if (spectral_scan_params.enable == true) {
@@ -2050,6 +2076,7 @@ void thread_up(void) {
     /* mote info variables */
     uint32_t mote_addr = 0;
     uint16_t mote_fcnt = 0;
+	
 
     /* set upstream socket RX timeout */
     i = setsockopt(sock_up, SOL_SOCKET, SO_RCVTIMEO, (void *)&push_timeout_half, sizeof push_timeout_half);
@@ -3744,6 +3771,24 @@ void thread_spectral_scan(void) {
         }
     }
     printf("\nINFO: End of Spectral Scan thread\n");
+}
+
+void thread_elora(void)
+{
+	struct mosquitto		*mosq = NULL;
+	mqtt_config_t			mqtt;
+	int						rv = -1;
+	
+	if(parse_mqtt_configuration("global_conf.json.sx1250.CN490", &mqtt) != ELORA_SUCCESS)
+	{
+		printf("parse mqtt configuration failure\n");
+	}
+
+	rv = mqtt_broker_connect(mqtt, &mosq, &emqx);
+	if(rv < 0)
+	{
+		printf("ERROR:MQTT failed\n");
+	}
 }
 
 /* --- EOF ------------------------------------------------------------------ */

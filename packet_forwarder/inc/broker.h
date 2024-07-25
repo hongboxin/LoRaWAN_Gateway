@@ -20,6 +20,8 @@
 #define NETWORK_SIZE    20
 #define TOPIC_LEN		20
 
+#define BUF_SIZE		512
+
 typedef struct mqtt_config_s
 {
 	char        host[HOST_LEN];
@@ -30,17 +32,31 @@ typedef struct mqtt_config_s
 	char		sub_topic[TOPIC_LEN];
 }mqtt_config_t;
 
+typedef struct emqx_config_s
+{
+	char        enable[BUF_SIZE];
+	char        host[BUF_SIZE];
+	int         port;
+	char        username[BUF_SIZE];
+	char        passwd[BUF_SIZE];
+	char        clientid[BUF_SIZE];
+	int         alive;
+	int         Qos;
+	char        sub_topic[BUF_SIZE];
+	char        pub_topic[BUF_SIZE];
+}emqx_config_t;
+
 extern void connect_callback(struct mosquitto *mosq, void *obj, int rc);
 
 extern void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message);
 
-extern int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq);
+extern int mqtt_broker_connect(mqtt_config_t mqtt, struct mosquitto **mosq, emqx_config_t *emqx);
 
-extern int gateway_send_server(char *buf, int buf_size);
+extern int gateway_send_server(char *buf, int buf_size, char *pub_topic);
 
-extern int gateway_recv_server(char *buf);
+extern int gateway_recv_server(char *buf, char *sub_topic);
 
-extern int gateway_connect_server(void);
+extern int gateway_connect_server(emqx_config_t *emqx);
 
 #endif
 
