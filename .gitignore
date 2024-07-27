@@ -1,0 +1,12 @@
+#libtools
+libbase64.a
+libparson.a
+libtinymt32.a
+libcjson.so
+libmosquitto.so
+base64.o
+parson.o
+tinymt32.o
+
+#libloragw
+test_*
